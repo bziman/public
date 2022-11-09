@@ -1,3 +1,4 @@
+/* Copyright 2022 Brian Ziman www.brianziman.com */
 import java.io.*;
 import java.net.*;
 import java.util.*;
