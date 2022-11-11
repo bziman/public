@@ -10,20 +10,23 @@ import java.util.stream.*;
 /**
  * A client that calls a slow RESTful service to generate IDs, aggregating the results
  * into a single JSON report.
+ *
+ * Output format is:
+ * { "jobs" : [ "UUID", "UUID", ... ] }
  */
 public class NoRestClient {
   private static final String URL = "http://localhost:8000/generateId";
 
   private final ExecutorService executorService = Executors.newCachedThreadPool();
 
-  public CompletableFuture<String> fetchId() throws Exception {
+  public CompletableFuture<String> fetchId(int id) throws Exception {
     HttpClient client = HttpClient.newBuilder()
       .version(HttpClient.Version.HTTP_1_1)
       .executor(executorService)
       .build();
 
     HttpRequest request = HttpRequest.newBuilder()
-      .uri(URI.create(URL))
+      .uri(URI.create(String.format("%s?id=%d", URL, id)))
       .build();
 
     return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
@@ -51,7 +54,7 @@ public class NoRestClient {
       System.err.print("Making requests");
       for (int i = 0; i < count; i++) {
         System.err.print(".");
-        futures.add(client.fetchId());
+        futures.add(client.fetchId(i));
       }
       System.out.println(" and waiting.");
       String json =
@@ -60,7 +63,7 @@ public class NoRestClient {
                  list ->
                     list.stream()
                         .map(s -> String.format("\"%s\"", s))
-                        .collect(Collectors.joining(", ", "[ ", " ]")))
+                        .collect(Collectors.joining(", ", "{ \"jobs\" : [ ", " ] }")))
              .get();
       System.out.println(json);
       long end = System.currentTimeMillis();

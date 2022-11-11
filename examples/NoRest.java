@@ -8,22 +8,24 @@ import java.util.concurrent.*;
  * Simple web server that responds to GET/POST requests by waiting a short time
  * and then returning an ID.
  *
- * GET /generateId HTTP/1.0
+ * GET /generateId?id=some_id HTTP/1.0
  *
  * HTTP/1.1 200 OK
  * Content-Type: text/plain
  * Content-Length: 20
  *
- * { "id" : "12345" }
+ * { "jobId" : "UUID" }
  *
  */
 public class NoRest implements Runnable {
-  private static final Set<String> SUPPORTED_METHODS = Set.of("GET", "POST");
+  private static final Set<String> SUPPORTED_METHODS = Set.of("GET");
   private static final String EXPECTED_URI = "/generateId";
 
   private final ExecutorService threadPool;
   private final int port;
   private volatile boolean running = true;
+
+  private final ConcurrentHashMap<String, UUID> jobs = new ConcurrentHashMap<>();
 
   NoRest(int port) {
     this.port = port;
@@ -79,7 +81,7 @@ public class NoRest implements Runnable {
     }
   }
 
-  static class Worker implements Runnable {
+  class Worker implements Runnable {
     private final Socket socket;
     private BufferedReader reader;
     private PrintWriter writer;
@@ -113,13 +115,15 @@ public class NoRest implements Runnable {
     void processRequest(BufferedReader reader, PrintWriter writer) throws IOException {
       // NOTE: This is NOT safe for public internet usage!
       String line = reader.readLine();
-      String[] parts = line.split("\\s+");
-      if (parts.length != 3) {
-        throw new IOException(String.format("Invalid request: '%s'", line));
+      String[] parts = line.split("\\s+|\\?|=");
+      if (parts.length != 5) {
+        writeError(400, "Invalid request\r\n");
       }
       String method = parts[0];
       String uri = parts[1];
-      String version = parts[2];
+      String queryKey = parts[2];
+      String queryValue = parts[3];
+      String version = parts[4];
       if (!version.startsWith("HTTP/")) {
         writeError(400, "Unsupported version: " + version + "\r\n");
         return;
@@ -133,13 +137,18 @@ public class NoRest implements Runnable {
         writeError(400, "Unsupported method: " + method + "\r\n");
         return;
       }
-      if (!uri.equals(EXPECTED_URI)) {
+      if (!uri.startsWith(EXPECTED_URI)) {
         writeError(404, "Unsupported URI: " + uri + "\r\n");
         return;
       }
-      long max = 100000000000000L;
-      String response = String.format("{ \"id\" : \"%d\" }\r\n", 
-          ThreadLocalRandom.current().nextLong(max/10, max));
+      if (!queryKey.equals("id")) {
+        writeError(400, "Invalid query: " + queryKey + "\r\n");
+        return;
+      }
+      
+      UUID uuid = jobs.computeIfAbsent(queryValue, unused -> UUID.randomUUID());
+
+      String response = String.format("{ \"jobId\" : \"%s\" }\r\n", uuid.toString());
       writeOkay(response);
     }
 
